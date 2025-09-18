@@ -60,6 +60,14 @@ LANGUAGES = {
         'promo_prompt': 'Send promo code:',
         'promo_invalid': '❌ Invalid or expired promo code',
         'promo_applied': '✅ Promo code applied. New price: {price}€',
+        'insufficient_funds': (
+            '❌ Insufficient funds to purchase {item}.\n'
+            'Price: {price}€\n'
+            'Balance: {balance}€\n'
+            'You still need {shortfall}€.'
+        ),
+        'shortfall_choose_method': '💵 You still need {amount}€ to buy {item}. Choose payment method:',
+        'pay_shortfall_button': 'Create invoice for {amount}€',
 
         'choose_subcategory': '🏘️ Choose a district:',
         'select_product': '🏪 Select a product',
@@ -131,6 +139,14 @@ LANGUAGES = {
         'promo_prompt': 'Введите промокод:',
         'promo_invalid': '❌ Недействительный или просроченный промокод',
         'promo_applied': '✅ Промокод применён. Новая цена: {price}€',
+        'insufficient_funds': (
+            '❌ Недостаточно средств для покупки {item}.\n'
+            'Цена: {price}€\n'
+            'Баланс: {balance}€\n'
+            'Необходимо доплатить {shortfall}€.'
+        ),
+        'shortfall_choose_method': '💵 Необходимо доплатить {amount}€ за {item}. Выберите способ оплаты:',
+        'pay_shortfall_button': 'Создать счёт на {amount}€',
 
         'choose_subcategory': '🏘️ Выберите район:',
         'select_product': '🏪 Выберите товар',
@@ -201,6 +217,14 @@ LANGUAGES = {
         'promo_prompt': 'Įveskite nuolaidos kodą:',
         'promo_invalid': '❌ Neteisingas arba pasibaigęs kodas',
         'promo_applied': '✅ Kodas pritaikytas. Nauja kaina: {price}€',
+        'insufficient_funds': (
+            '❌ Nepakanka lėšų įsigyti {item}.\n'
+            'Kaina: {price}€\n'
+            'Balansas: {balance}€\n'
+            'Reikia papildomai {shortfall}€.'
+        ),
+        'shortfall_choose_method': '💵 Reikia papildomai {amount}€ už {item}. Pasirinkite mokėjimo būdą:',
+        'pay_shortfall_button': 'Sukurti sąskaitą {amount}€',
 
         'choose_subcategory': '🏘️ Pasirinkite rajoną:',
         'select_product': '🏪 Pasirinkite prekę',
