@@ -972,6 +972,7 @@ async def confirm_cancel_payment(call: CallbackQuery):
             markup = main_menu(role, TgConfig.CHANNEL_URL, TgConfig.PRICE_LIST_URL, lang)
             text = build_menu_text(call.from_user, balance, purchases, lang)
             await send_start_media(bot, user_id)
+
             await bot.send_message(user_id, text, reply_markup=markup)
     else:
         await call.answer(text='❌ Invoice not found')
