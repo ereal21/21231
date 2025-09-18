@@ -51,6 +51,15 @@ LANGUAGES = {
         'invoice_cancelled': 'Payment failed/expired. Your items are no longer reserved.',
         'total_purchases': '📦 Total Purchases: {count}',
         'note': '⚠️ Note: No refunds. Please ensure you send the exact amount for payments, as underpayments will not be confirmed.',
+        'main_menu_text': (
+            "🍩👩‍🍳 Welcome to Sugar Chef’s Kitchen, {user}!\n"
+            "Where every order is sprinkled with sweetness ✨\n\n"
+            "🍬 Candy Balance: {balance} EUR\n"
+            "🍪 Goodies Collected: {purchases}\n\n"
+            "⚠️ Sugar Alert!\n"
+            "No refunds on treats 🍭\n"
+            "Make sure to send the exact sprinkle amount - underpayments stay in the mixing bowl and won’t be served 🍰"
+        ),
         'feedback_service': '🛎️ How was your experience with the service?\n✍️ Leave a hand review in our group: https://t.me/+QVDtC4t9OglmZDVk',
         'feedback_product': 'Opinion on the product?',
         'thanks_feedback': 'Thanks for your feedback!',
@@ -130,6 +139,15 @@ LANGUAGES = {
         'invoice_cancelled': 'Оплата не завершена/истекла. Ваши товары больше не зарезервированы.',
         'total_purchases': '📦 Всего покупок: {count}',
         'note': '⚠️ Возврат средств невозможен. Отправляйте точную сумму, недоплаты не подтверждаются.',
+        'main_menu_text': (
+            '🍩👩‍🍳 Добро пожаловать на кухню Sugar Chef, {user}!\n'
+            'Здесь каждый заказ посыпан сладостью ✨\n\n'
+            '🍬 Сладкий баланс: {balance} EUR\n'
+            '🍪 Собрано вкусняшек: {purchases}\n\n'
+            '⚠️ Сахарное предупреждение!\n'
+            'Возвратов нет 🍭\n'
+            'Отправляйте точную сумму посыпки - недоплаты останутся в миске и не будут поданы 🍰'
+        ),
         'feedback_service': '🛎️ Как вам обслуживание?\n✍️ Напишите отзыв вручную в группе: https://t.me/+QVDtC4t9OglmZDVk',
         'feedback_product': 'Мнение о товаре?',
         'thanks_feedback': 'Спасибо за отзыв!',
@@ -208,6 +226,15 @@ LANGUAGES = {
         'invoice_cancelled': 'Mokėjimas nepavyko/baigėsi. Jūsų prekės nebėra rezervuotos.',
         'total_purchases': '📦 Viso pirkinių: {count}',
         'note': '⚠️ Pastaba: grąžinimų nėra. Įsitikinkite, kad siunčiate tikslią sumą, nes nepakankamos sumos nebus patvirtintos.',
+        'main_menu_text': (
+            '🍩👩‍🍳 Sveikas atvykęs į Sugar Chef virtuvę, {user}!\n'
+            'Čia kiekvienas užsakymas pabarstytas saldumu ✨\n\n'
+            '🍬 Saldainių balansas: {balance} EUR\n'
+            '🍪 Surinktų skanumynų: {purchases}\n\n'
+            '⚠️ Cukraus įspėjimas!\n'
+            'Pinigai negrąžinami 🍭\n'
+            'Siųsk tikslų pabarstukų kiekį - nepakankami mokėjimai liks dubenyje ir nebus patiekti 🍰'
+        ),
         'feedback_service': '🛎️ Kaip vertinate aptarnavimą?\n✍️ Parašykite atsiliepimą šioje grupėje: https://t.me/+QVDtC4t9OglmZDVk',
         'feedback_product': 'Kokia nuomonė apie prekę?',
         'thanks_feedback': 'Ačiū už atsiliepimą!',

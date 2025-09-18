@@ -99,12 +99,33 @@ async def _notify_invoice_cancelled(bot, user_id: int, lang: str, context: dict 
 def build_menu_text(user_obj, balance: float, purchases: int, lang: str) -> str:
     """Return the formatted main menu text."""
     mention = f"<a href='tg://user?id={user_obj.id}'>{html.escape(user_obj.full_name)}</a>"
-    return (
-        f"{t(lang, 'hello', user=mention)}\n"
-        f"{t(lang, 'balance', balance=f'{balance:.2f}')}\n"
-        f"{t(lang, 'total_purchases', count=purchases)}\n\n"
-        f"{t(lang, 'note')}"
+    balance_value = balance if balance is not None else 0
+    balance_text = f"{float(balance_value):.2f}"
+    purchases_count = int(purchases or 0)
+    return t(
+        lang,
+        'main_menu_text',
+        user=mention,
+        balance=balance_text,
+        purchases=purchases_count,
     )
+
+
+async def send_start_media(bot, user_id: int) -> None:
+    """Send the configured start video or fallback photo before the menu."""
+    media_options = (
+        (getattr(TgConfig, 'START_VIDEO_PATH', None), bot.send_video),
+        (getattr(TgConfig, 'START_PHOTO_PATH', None), bot.send_photo),
+    )
+    for path, sender in media_options:
+        if not path:
+            continue
+        try:
+            with open(path, 'rb') as media:
+                await sender(user_id, media)
+                break
+        except Exception:
+            continue
 
 
 def build_subcategory_description(parent: str, lang: str) -> str:
@@ -162,11 +183,7 @@ async def start(message: Message):
     purchases = select_user_items(user_id)
     markup = main_menu(role_data, TgConfig.CHANNEL_URL, TgConfig.PRICE_LIST_URL, user_lang)
     text = build_menu_text(message.from_user, balance, purchases, user_lang)
-    try:
-        with open(TgConfig.START_PHOTO_PATH, 'rb') as photo:
-            await bot.send_photo(user_id, photo)
-    except Exception:
-        pass
+    await send_start_media(bot, user_id)
     await bot.send_message(user_id, text, reply_markup=markup)
     await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
 
@@ -618,6 +635,7 @@ async def process_home_menu(call: CallbackQuery):
     markup = main_menu(user.role_id, TgConfig.CHANNEL_URL, TgConfig.PRICE_LIST_URL, lang)
     purchases = select_user_items(user_id)
     text = build_menu_text(call.from_user, user.balance, purchases, lang)
+    await send_start_media(bot, user_id)
     await bot.send_message(user_id, text, reply_markup=markup)
 
 async def bought_items_callback_handler(call: CallbackQuery):
@@ -953,6 +971,8 @@ async def confirm_cancel_payment(call: CallbackQuery):
             purchases = select_user_items(user_id)
             markup = main_menu(role, TgConfig.CHANNEL_URL, TgConfig.PRICE_LIST_URL, lang)
             text = build_menu_text(call.from_user, balance, purchases, lang)
+            await send_start_media(bot, user_id)
+
             await bot.send_message(user_id, text, reply_markup=markup)
     else:
         await call.answer(text='❌ Invoice not found')
@@ -1006,11 +1026,7 @@ async def set_language(call: CallbackQuery):
     purchases = select_user_items(user_id)
     text = build_menu_text(call.from_user, balance, purchases, lang_code)
 
-    try:
-        with open(TgConfig.START_PHOTO_PATH, 'rb') as photo:
-            await bot.send_photo(user_id, photo)
-    except Exception:
-        pass
+    await send_start_media(bot, user_id)
 
     await bot.send_message(
         chat_id=user_id,
