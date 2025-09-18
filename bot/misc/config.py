@@ -13,3 +13,4 @@ class TgConfig(ABC):
     PAYMENT_TIME: Final = 1800
     RULES: Final = 'insert your rules here'
     START_PHOTO_PATH: Final = r'C:\Users\Administrator\Downloads\photo_2025-08-17_23-09-19.jpg'
+    START_VIDEO_PATH: Final = r'C:\Users\Administrator\Desktop\bot\1.mp4'

@@ -3,7 +3,7 @@ from bot.database.models import Permission
 
 from bot.localization import t
 from bot.database.methods import get_category_parent, select_item_values_amount
-from bot.utils import display_name
+from bot.utils import display_name, format_amount
 
 
 
@@ -155,6 +155,35 @@ def confirm_purchase_menu(item_name: str, lang: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(t(lang, 'purchase_button'), callback_data=f'buy_{item_name}')],
         [InlineKeyboardButton(t(lang, 'apply_promo'), callback_data=f'applypromo_{item_name}')],
         [InlineKeyboardButton('🔙 Back to menu', callback_data='back_to_menu')]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
+
+
+def insufficient_funds_menu(item_name: str, amount: float, lang: str) -> InlineKeyboardMarkup:
+    amount_text = format_amount(amount)
+    inline_keyboard = [
+        [
+            InlineKeyboardButton(
+                t(lang, 'pay_shortfall_button', amount=amount_text),
+                callback_data=f'purchase_invoice_{item_name}',
+            )
+        ],
+        [InlineKeyboardButton('🔙 Go back', callback_data=f'item_{item_name}')],
+        [InlineKeyboardButton('🔙 Back to menu', callback_data='back_to_menu')],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
+
+
+def purchase_payment_options(item_name: str) -> InlineKeyboardMarkup:
+    inline_keyboard = [
+        [InlineKeyboardButton('SOL', callback_data='crypto_SOL'),
+         InlineKeyboardButton('BTC', callback_data='crypto_BTC')],
+        [InlineKeyboardButton('TRX', callback_data='crypto_TRX'),
+         InlineKeyboardButton('TON', callback_data='crypto_TON')],
+        [InlineKeyboardButton('USDT (TRC20)', callback_data='crypto_USDTTRC20'),
+         InlineKeyboardButton('ETH', callback_data='crypto_ETH')],
+        [InlineKeyboardButton('LTC', callback_data='crypto_LTC')],
+        [InlineKeyboardButton('🔙 Go back', callback_data=f'back_shortfall_{item_name}')]
     ]
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
