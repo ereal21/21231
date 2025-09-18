@@ -5,12 +5,15 @@ import shutil
 from io import BytesIO
 from urllib.parse import urlparse
 import html
+from contextlib import suppress
+from decimal import Decimal, ROUND_HALF_UP
 
 import qrcode
 
 
 from aiogram import Dispatcher
-from aiogram.types import Message, CallbackQuery, ChatType, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import CallbackQuery, ChatType, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.utils.exceptions import MessageCantBeDeleted, MessageToDeleteNotFound
 
 from bot.database.methods import (
     get_role_id_by_name, create_user, check_role, check_user,
@@ -25,15 +28,72 @@ from bot.handlers.other import get_bot_user_ids, get_bot_info
 from bot.keyboards import (
     main_menu, categories_list, goods_list, subcategories_list, user_items_list, back, item_info,
     profile, rules, payment_menu, close, crypto_choice, crypto_invoice_menu, confirm_cancel,
-    confirm_purchase_menu)
+    confirm_purchase_menu, insufficient_funds_menu, purchase_payment_options,
+)
 from bot.localization import t
 from bot.logger_mesh import logger
 from bot.misc import TgConfig, EnvKeys
 from bot.misc.payment import quick_pay, check_payment_status
 from bot.misc.nowpayments import create_payment, check_payment
-from bot.utils import display_name
+from bot.utils import display_name, format_amount
 from bot.utils.notifications import notify_owner_of_purchase
 from bot.utils.files import cleanup_item_file
+
+
+def _to_decimal(value) -> Decimal:
+    return Decimal(str(value))
+
+
+def _compute_shortfall(price, balance) -> Decimal:
+    diff = _to_decimal(price) - _to_decimal(balance)
+    if diff <= 0:
+        return Decimal('0')
+    return diff.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+
+def _remember_invoice_context(user_id: int, invoice_id: str) -> None:
+    item_name = TgConfig.STATE.get(f'{user_id}_invoice_for_purchase')
+    pending_item = TgConfig.STATE.get(f'{user_id}_pending_item')
+    price = TgConfig.STATE.get(f'{user_id}_price')
+    if item_name and price is not None and pending_item == item_name:
+        TgConfig.STATE[f'invoice_ctx_{invoice_id}'] = {
+            'item': item_name,
+            'price': price,
+        }
+    TgConfig.STATE.pop(f'{user_id}_invoice_for_purchase', None)
+
+
+async def _notify_invoice_cancelled(bot, user_id: int, lang: str, context: dict | None) -> None:
+    if context:
+        item_name = context.get('item')
+        price = context.get('price')
+        if item_name and price is not None:
+            balance = get_user_balance(user_id) or 0
+            shortfall = _compute_shortfall(price, balance)
+            price_text = format_amount(price)
+            balance_text = format_amount(balance)
+            if shortfall == 0:
+                text = t(lang, 'confirm_purchase', item=display_name(item_name), price=price_text)
+                await bot.send_message(user_id, text, reply_markup=confirm_purchase_menu(item_name, lang))
+            else:
+                shortfall_float = float(shortfall)
+                shortfall_text = format_amount(shortfall)
+                info = t(
+                    lang,
+                    'insufficient_funds',
+                    item=display_name(item_name),
+                    price=price_text,
+                    balance=balance_text,
+                    shortfall=shortfall_text,
+                )
+                text = f"{t(lang, 'invoice_cancelled')}\n\n{info}"
+                await bot.send_message(
+                    user_id,
+                    text,
+                    reply_markup=insufficient_funds_menu(item_name, shortfall_float, lang),
+                )
+            return
+    await bot.send_message(user_id, t(lang, 'invoice_cancelled'))
 
 
 def build_menu_text(user_obj, balance: float, purchases: int, lang: str) -> str:
@@ -262,9 +322,6 @@ async def item_info_callback_handler(call: CallbackQuery):
         message_id=call.message.message_id,
         reply_markup=markup)
 
-
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-
 # Inline markup for Home button
 def home_markup(lang: str = 'en'):
     return InlineKeyboardMarkup().add(
@@ -284,6 +341,7 @@ async def confirm_buy_callback_handler(call: CallbackQuery):
     TgConfig.STATE[user_id] = None
     TgConfig.STATE[f'{user_id}_pending_item'] = item_name
     TgConfig.STATE[f'{user_id}_price'] = price
+    TgConfig.STATE.pop(f'{user_id}_invoice_for_purchase', None)
     text = t(lang, 'confirm_purchase', item=display_name(item_name), price=price)
     await bot.edit_message_text(
         chat_id=call.message.chat.id,
@@ -337,7 +395,8 @@ async def buy_item_callback_handler(call: CallbackQuery):
     msg = call.message.message_id
     item_info_list = get_item_info(item_name)
     item_price = TgConfig.STATE.get(f'{user_id}_price', item_info_list["price"])
-    user_balance = get_user_balance(user_id)
+    user_balance = get_user_balance(user_id) or 0
+    lang = get_user_language(user_id) or 'en'
     purchases_before = select_user_items(user_id)
 
     if user_balance >= item_price:
@@ -437,9 +496,9 @@ async def buy_item_callback_handler(call: CallbackQuery):
             user_info = await bot.get_chat(user_id)
             logger.info(f"User {user_id} ({user_info.first_name})"
                         f" bought 1 item of {value_data['item_name']} for {item_price}€")
-            lang = get_user_language(user_id) or 'en'
             TgConfig.STATE.pop(f'{user_id}_pending_item', None)
             TgConfig.STATE.pop(f'{user_id}_price', None)
+            TgConfig.STATE.pop(f'{user_id}_invoice_for_purchase', None)
             return
 
         await bot.edit_message_text(chat_id=call.message.chat.id,
@@ -448,14 +507,107 @@ async def buy_item_callback_handler(call: CallbackQuery):
                                     reply_markup=back(f'item_{item_name}'))
         TgConfig.STATE.pop(f'{user_id}_pending_item', None)
         TgConfig.STATE.pop(f'{user_id}_price', None)
+        TgConfig.STATE.pop(f'{user_id}_invoice_for_purchase', None)
         return
 
-    await bot.edit_message_text(chat_id=call.message.chat.id,
-                                message_id=msg,
-                                text='❌ Insufficient funds',
-                                reply_markup=back(f'item_{item_name}'))
-    TgConfig.STATE.pop(f'{user_id}_pending_item', None)
-    TgConfig.STATE.pop(f'{user_id}_price', None)
+    shortfall = _compute_shortfall(item_price, user_balance)
+    if shortfall == 0:
+        await bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=msg,
+            text=t(lang, 'confirm_purchase', item=display_name(item_name), price=format_amount(item_price)),
+            reply_markup=confirm_purchase_menu(item_name, lang),
+        )
+        return
+
+    shortfall_text = format_amount(shortfall)
+    price_text = format_amount(item_price)
+    balance_text = format_amount(user_balance)
+    info_text = t(
+        lang,
+        'insufficient_funds',
+        item=display_name(item_name),
+        price=price_text,
+        balance=balance_text,
+        shortfall=shortfall_text,
+    )
+    await bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=msg,
+        text=info_text,
+        reply_markup=insufficient_funds_menu(item_name, float(shortfall), lang),
+    )
+
+
+async def create_purchase_invoice(call: CallbackQuery):
+    item_name = call.data[len('purchase_invoice_'):]
+    bot, user_id = await get_bot_user_ids(call)
+    lang = get_user_language(user_id) or 'en'
+    pending_item = TgConfig.STATE.get(f'{user_id}_pending_item')
+    price = TgConfig.STATE.get(f'{user_id}_price')
+    if pending_item != item_name or price is None:
+        await call.answer('❌ Item not found', show_alert=True)
+        return
+    balance = get_user_balance(user_id) or 0
+    shortfall = _compute_shortfall(price, balance)
+    if shortfall == 0:
+        text = t(lang, 'confirm_purchase', item=display_name(item_name), price=format_amount(price))
+        await bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=text,
+            reply_markup=confirm_purchase_menu(item_name, lang),
+        )
+        return
+    amount_text = format_amount(shortfall)
+    TgConfig.STATE[f'{user_id}_amount'] = amount_text
+    TgConfig.STATE[f'{user_id}_invoice_for_purchase'] = item_name
+    prompt = t(lang, 'shortfall_choose_method', amount=amount_text, item=display_name(item_name))
+    await bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=prompt,
+        reply_markup=purchase_payment_options(item_name),
+    )
+
+
+async def back_to_shortfall(call: CallbackQuery):
+    item_name = call.data[len('back_shortfall_'):]
+    bot, user_id = await get_bot_user_ids(call)
+    lang = get_user_language(user_id) or 'en'
+    price = TgConfig.STATE.get(f'{user_id}_price')
+    pending_item = TgConfig.STATE.get(f'{user_id}_pending_item')
+    if pending_item != item_name or price is None:
+        await call.answer('❌ Item not found', show_alert=True)
+        return
+    balance = get_user_balance(user_id) or 0
+    shortfall = _compute_shortfall(price, balance)
+    TgConfig.STATE.pop(f'{user_id}_invoice_for_purchase', None)
+    TgConfig.STATE.pop(f'{user_id}_amount', None)
+    if shortfall == 0:
+        text = t(lang, 'confirm_purchase', item=display_name(item_name), price=format_amount(price))
+        await bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=text,
+            reply_markup=confirm_purchase_menu(item_name, lang),
+        )
+        return
+    shortfall_text = format_amount(shortfall)
+    info_text = t(
+        lang,
+        'insufficient_funds',
+        item=display_name(item_name),
+        price=format_amount(price),
+        balance=format_amount(balance),
+        shortfall=shortfall_text,
+    )
+    await bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=info_text,
+        reply_markup=insufficient_funds_menu(item_name, float(shortfall), lang),
+    )
 
 # Home button callback handler
 async def process_home_menu(call: CallbackQuery):
@@ -639,6 +791,7 @@ async def pay_yoomoney(call: CallbackQuery):
                                      f'<b>❗️ After payment press "Check payment"</b>',
                                 reply_markup=markup)
     start_operation(user_id, amount, label, call.message.message_id)
+    _remember_invoice_context(user_id, label)
     await asyncio.sleep(sleep_time)
     info = get_unfinished_operation(label)
     if info:
@@ -646,7 +799,8 @@ async def pay_yoomoney(call: CallbackQuery):
         status = await check_payment_status(label)
         if status not in ('paid', 'success'):
             finish_operation(label)
-            await bot.send_message(user_id, t(lang, 'invoice_cancelled'))
+            context = TgConfig.STATE.pop(f'invoice_ctx_{label}', None)
+            await _notify_invoice_cancelled(bot, user_id, lang, context)
 
 
 async def crypto_payment(call: CallbackQuery):
@@ -689,6 +843,7 @@ async def crypto_payment(call: CallbackQuery):
         reply_markup=markup,
     )
     start_operation(user_id, amount, payment_id, sent.message_id)
+    _remember_invoice_context(user_id, payment_id)
     await asyncio.sleep(sleep_time)
     info = get_unfinished_operation(payment_id)
     if info:
@@ -696,7 +851,8 @@ async def crypto_payment(call: CallbackQuery):
         status = await check_payment(payment_id)
         if status not in ('finished', 'confirmed', 'sending'):
             finish_operation(payment_id)
-            await bot.send_message(user_id, t(lang, 'invoice_cancelled'))
+            context = TgConfig.STATE.pop(f'invoice_ctx_{payment_id}', None)
+            await _notify_invoice_cancelled(bot, user_id, lang, context)
 
 
 async def checking_payment(call: CallbackQuery):
@@ -704,6 +860,7 @@ async def checking_payment(call: CallbackQuery):
     message_id = call.message.message_id
     label = call.data[6:]
     info = get_unfinished_operation(label)
+    lang = get_user_language(user_id) or 'en'
 
     if info:
         user_id_db, operation_value, _ = info
@@ -728,6 +885,7 @@ async def checking_payment(call: CallbackQuery):
 
             create_operation(user_id, operation_value, formatted_time)
             update_balance(user_id, operation_value)
+            context = TgConfig.STATE.pop(f'invoice_ctx_{label}', None)
             await bot.edit_message_text(chat_id=call.message.chat.id,
                                         message_id=message_id,
                                         text=f'✅ Balance topped up by {operation_value}€',
@@ -737,6 +895,22 @@ async def checking_payment(call: CallbackQuery):
                 EnvKeys.OWNER_ID,
                 f'User {username} topped up {operation_value}€'
             )
+            if context:
+                item_name = context.get('item')
+                price = context.get('price')
+                if item_name and price is not None:
+                    text = t(
+                        lang,
+                        'confirm_purchase',
+                        item=display_name(item_name),
+                        price=format_amount(price),
+                    )
+                    await bot.send_message(
+                        user_id,
+                        text,
+                        reply_markup=confirm_purchase_menu(item_name, lang),
+                    )
+                    TgConfig.STATE.pop(f'{user_id}_amount', None)
         else:
             await call.answer(text='❌ Payment was not successful')
     else:
@@ -768,25 +942,18 @@ async def confirm_cancel_payment(call: CallbackQuery):
     lang = get_user_language(user_id) or 'en'
     if get_unfinished_operation(invoice_id):
         finish_operation(invoice_id)
-        role = check_role(user_id)
-        user = check_user(user_id)
-        balance = user.balance if user else 0
-        purchases = select_user_items(user_id)
-        markup = main_menu(role, TgConfig.CHANNEL_URL, TgConfig.PRICE_LIST_URL, lang)
-        text = build_menu_text(call.from_user, balance, purchases, lang)
-        if call.message.text:
-            await bot.edit_message_text(
-                t(lang, 'invoice_cancelled'),
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-            )
-        else:
-            await bot.edit_message_caption(
-                caption=t(lang, 'invoice_cancelled'),
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-            )
-        await bot.send_message(user_id, text, reply_markup=markup)
+        context = TgConfig.STATE.pop(f'invoice_ctx_{invoice_id}', None)
+        with suppress(MessageCantBeDeleted, MessageToDeleteNotFound):
+            await bot.delete_message(call.message.chat.id, call.message.message_id)
+        await _notify_invoice_cancelled(bot, user_id, lang, context)
+        if context is None:
+            role = check_role(user_id)
+            user = check_user(user_id)
+            balance = user.balance if user else 0
+            purchases = select_user_items(user_id)
+            markup = main_menu(role, TgConfig.CHANNEL_URL, TgConfig.PRICE_LIST_URL, lang)
+            text = build_menu_text(call.from_user, balance, purchases, lang)
+            await bot.send_message(user_id, text, reply_markup=markup)
     else:
         await call.answer(text='❌ Invoice not found')
 
@@ -900,6 +1067,10 @@ def register_user_handlers(dp: Dispatcher):
                                        lambda c: c.data.startswith('applypromo_'), state='*')
     dp.register_callback_query_handler(buy_item_callback_handler,
                                        lambda c: c.data.startswith('buy_'), state='*')
+    dp.register_callback_query_handler(create_purchase_invoice,
+                                       lambda c: c.data.startswith('purchase_invoice_'), state='*')
+    dp.register_callback_query_handler(back_to_shortfall,
+                                       lambda c: c.data.startswith('back_shortfall_'), state='*')
     dp.register_callback_query_handler(pay_yoomoney,
                                        lambda c: c.data == 'pay_yoomoney', state='*')
     dp.register_callback_query_handler(crypto_payment,
